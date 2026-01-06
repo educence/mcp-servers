@@ -1,0 +1,215 @@
+{
+  "name": "Jen OS Shell Proxy (Claude Access)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jen-os-shell",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "jen-os-shell-proxy"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-auth-token",
+              "leftValue": "={{ $json.headers['x-jen-os-token'] }}",
+              "rightValue": "={{ $env.JEN_OS_SHELL_TOKEN }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-auth-valid",
+      "name": "Auth Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ALLOWLIST: Only these command prefixes are permitted\nconst ALLOWED_PREFIXES = [\n  'docker compose',\n  'docker ps',\n  'docker logs',\n  'docker restart',\n  'pm2 status',\n  'pm2 list',\n  'pm2 logs',\n  'pm2 restart',\n  'pm2 stop',\n  'pm2 start',\n  'pm2 delete',\n  'cat ~/n8n/',\n  'ls -la ~/n8n',\n  'pwd',\n  'whoami',\n  'curl -s localhost',\n  'systemctl status',\n  'df -h',\n  'free -m',\n  'uptime'\n];\n\n// BLOCKLIST: Never allow these patterns\nconst BLOCKED_PATTERNS = [\n  'rm -rf',\n  'rm -r /',\n  '> /dev',\n  'mkfs',\n  'dd if=',\n  'chmod 777',\n  'curl | bash',\n  'wget | bash',\n  'eval',\n  '$()',\n  '`',\n  '&&',\n  '||',\n  ';',\n  '|'\n];\n\nconst command = $json.body.command || '';\nconst commandLower = command.toLowerCase().trim();\n\n// Check blocklist first\nfor (const blocked of BLOCKED_PATTERNS) {\n  if (command.includes(blocked)) {\n    return {\n      allowed: false,\n      reason: `Blocked pattern detected: ${blocked}`,\n      command: command\n    };\n  }\n}\n\n// Check allowlist\nlet allowed = false;\nlet matchedPrefix = '';\nfor (const prefix of ALLOWED_PREFIXES) {\n  if (commandLower.startsWith(prefix.toLowerCase())) {\n    allowed = true;\n    matchedPrefix = prefix;\n    break;\n  }\n}\n\nif (!allowed) {\n  return {\n    allowed: false,\n    reason: 'Command not in allowlist',\n    command: command,\n    hint: 'Allowed prefixes: ' + ALLOWED_PREFIXES.slice(0, 5).join(', ') + '...'\n  };\n}\n\nreturn {\n  allowed: true,\n  command: command,\n  matchedPrefix: matchedPrefix\n};"
+      },
+      "id": "validate-command",
+      "name": "Validate Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, -100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-allowed",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-command-allowed",
+      "name": "Command Allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.command }}"
+      },
+      "id": "execute-command",
+      "name": "Execute Command",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [880, -200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"command\": \"{{ $('Validate Command').item.json.command }}\",\n  \"stdout\": {{ JSON.stringify($json.stdout) }},\n  \"stderr\": {{ JSON.stringify($json.stderr) }},\n  \"exitCode\": {{ $json.exitCode }}\n}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, -200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"Command not allowed\",\n  \"reason\": \"{{ $json.reason }}\",\n  \"command\": \"{{ $json.command }}\",\n  \"hint\": \"{{ $json.hint || 'Contact Jen for allowlist updates' }}\"\n}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "respond-not-allowed",
+      "name": "Respond Not Allowed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"error\": \"Unauthorized\",\n  \"message\": \"Invalid or missing X-Jen-OS-Token header\"\n}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "respond-unauthorized",
+      "name": "Respond Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 100]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Valid?": {
+      "main": [
+        [
+          {
+            "node": "Validate Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Command": {
+      "main": [
+        [
+          {
+            "node": "Command Allowed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command Allowed?": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Not Allowed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
