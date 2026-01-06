@@ -1,0 +1,376 @@
+{
+  "name": "Jen OS Router Tasks Bridge",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 60
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 60 Seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "f65e7d1486474bd88c0598add298f0d8",
+          "mode": "id"
+        },
+        "returnAll": false,
+        "limit": 10,
+        "filterType": "json",
+        "filterJson": "{\n  \"filter\": {\n    \"property\": \"Status\",\n    \"select\": {\n      \"equals\": \"PENDING\"\n    }\n  }\n}"
+      },
+      "id": "notion-query-pending",
+      "name": "Query PENDING Tasks",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [220, 0],
+      "credentials": {
+        "notionApi": {
+          "id": "NOTION_CREDENTIAL_ID",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-has-items",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-tasks",
+      "name": "Has Tasks?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Status|select",
+              "selectValue": "CLAIMED"
+            },
+            {
+              "key": "Executed By|rich_text",
+              "textValue": "n8n-bridge"
+            }
+          ]
+        }
+      },
+      "id": "notion-claim-task",
+      "name": "Claim Task (CLAIMED)",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [660, -100],
+      "credentials": {
+        "notionApi": {
+          "id": "NOTION_CREDENTIAL_ID",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 4096,\n  \"system\": \"You are an AI assistant operating within Jen OS. Process tasks precisely and return structured responses. Follow positive-sum principles. Never use shame-based language.\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Process this Router Task:\\n\\nTask ID: {{ $json.properties['Task ID'].title[0].plain_text }}\\nType: {{ $json.properties.Type.select.name }}\\nTarget: {{ $json.properties.Target.select.name }}\\nPayload: {{ $json.properties.Payload.rich_text[0]?.plain_text || 'No payload' }}\\n\\nExecute the task and return your response.\"\n    }\n  ]\n}"
+      },
+      "id": "anthropic-call",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, -100],
+      "credentials": {
+        "anthropicApi": {
+          "id": "ANTHROPIC_CREDENTIAL_ID",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Claim Task (CLAIMED)').item.json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Status|select",
+              "selectValue": "DONE"
+            },
+            {
+              "key": "Execution Notes|rich_text",
+              "textValue": "={{ $json.content[0].text.substring(0, 2000) }}"
+            }
+          ]
+        }
+      },
+      "id": "notion-mark-done",
+      "name": "Mark Task DONE",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1100, -100],
+      "credentials": {
+        "notionApi": {
+          "id": "NOTION_CREDENTIAL_ID",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-target-artifacts",
+              "leftValue": "={{ $('Claim Task (CLAIMED)').item.json.properties.Target.select.name }}",
+              "rightValue": "Artifacts",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-target-artifacts",
+      "name": "Target = Artifacts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1320, -100]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "value": "d425ea1f026c4ad997e458fe3fd6c5b3",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Artifact Name|title",
+              "textValue": "=Bridge Output: {{ $('Claim Task (CLAIMED)').item.json.properties['Task ID'].title[0].plain_text }}"
+            },
+            {
+              "key": "Type|select",
+              "selectValue": "Document"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Draft"
+            },
+            {
+              "key": "Created By|select",
+              "selectValue": "Automated"
+            },
+            {
+              "key": "Department|select",
+              "selectValue": "Jen_OS"
+            },
+            {
+              "key": "Content|rich_text",
+              "textValue": "={{ $('Call Claude API').item.json.content[0].text.substring(0, 2000) }}"
+            }
+          ]
+        }
+      },
+      "id": "notion-create-artifact",
+      "name": "Create Artifact",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [1540, -200],
+      "credentials": {
+        "notionApi": {
+          "id": "NOTION_CREDENTIAL_ID",
+          "name": "Notion API"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-op-no-tasks",
+      "name": "No Tasks",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 100]
+    },
+    {
+      "parameters": {},
+      "id": "no-op-other-target",
+      "name": "Other Target",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1540, 0]
+    }
+  ],
+  "connections": {
+    "Every 60 Seconds": {
+      "main": [
+        [
+          {
+            "node": "Query PENDING Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query PENDING Tasks": {
+      "main": [
+        [
+          {
+            "node": "Has Tasks?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Tasks?": {
+      "main": [
+        [
+          {
+            "node": "Claim Task (CLAIMED)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Task (CLAIMED)": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Mark Task DONE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Task DONE": {
+      "main": [
+        [
+          {
+            "node": "Target = Artifacts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Target = Artifacts?": {
+      "main": [
+        [
+          {
+            "node": "Create Artifact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Other Target",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
