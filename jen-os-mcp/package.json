@@ -1,0 +1,15 @@
+{
+  "name": "jen-os-mcp",
+  "version": "1.0.0",
+  "description": "Jen OS MCP Server - Notion bridge for AI orchestration",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "@notionhq/client": "^2.2.14"
+  }
+}
