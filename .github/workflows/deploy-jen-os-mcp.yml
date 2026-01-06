@@ -1,0 +1,42 @@
+name: Deploy jen-os-mcp
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'jen-os-mcp/**'
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./jen-os-mcp
+        run: npm install
+
+      - name: Stop existing service (if running)
+        run: |
+          pm2 stop jen-os-mcp || true
+          pm2 delete jen-os-mcp || true
+        continue-on-error: true
+
+      - name: Start jen-os-mcp with PM2
+        working-directory: ./jen-os-mcp
+        run: |
+          pm2 start src/index.js --name jen-os-mcp
+          pm2 save
+
+      - name: Verify deployment
+        run: |
+          sleep 3
+          pm2 status jen-os-mcp
