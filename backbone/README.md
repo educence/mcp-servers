@@ -15,7 +15,7 @@ One backbone, not more tools. Everything goes through the same 2-3 rails:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      FRONT DOORS                            │
-│  Claude.ai │ Claude Code │ Any MCP Client │ Manual Trigger  │
+│  Claude.ai │ Perplexity │ n8n Webhook │ Manual Trigger      │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -54,6 +54,15 @@ One backbone, not more tools. Everything goes through the same 2-3 rails:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## Front Door Definitions
+
+| Door | When Used | Token Cost |
+|------|-----------|------------|
+| **Claude.ai** | Interactive work, complex reasoning | High (session-based) |
+| **Perplexity** | Research, current events, validation | Medium (API calls) |
+| **n8n Webhook** | Scheduled tasks, automation triggers | Low (batch) |
+| **Manual Trigger** | Direct DB edits, emergency overrides | None |
+
 ## Files in This Folder
 
 - `README.md` - This file (architecture overview)
@@ -74,3 +83,12 @@ When the backbone is real:
 - Tools become interchangeable cables (swap Tailscale for Cloudflare without changing how you work)
 - AIs stop being separate worlds (all see same spine, use same tools, report to same router)
 - "Prosperous system" becomes measurable (Router Tasks complete, OS updates, workflows run safely)
+
+## Parked: Claude Code
+
+Claude Code (CLI tool) was considered but parked. Reasons:
+- n8n already handles automation/scheduling
+- Claude.ai with computer use covers interactive coding
+- Would add maintenance burden without clear value
+
+Revisit if: need terminal-only remote development or CI/CD integration.
