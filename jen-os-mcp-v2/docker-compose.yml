@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  jen-os-mcp:
+    build: .
+    container_name: jen-os-mcp
+    restart: unless-stopped
+    ports:
+      - "3847:3847"
+    environment:
+      - TRANSPORT=http
+      - PORT=3847
+      - NOTION_TOKEN=${NOTION_TOKEN}
+      - ROUTER_TASKS_DB=${ROUTER_TASKS_DB:-f65e7d1486474bd88c0598add298f0d8}
+      - ARTIFACTS_DB=${ARTIFACTS_DB:-d425ea1f026c4ad997e458fe3fd6c5b3}
+      - PATTERNS_DB=${PATTERNS_DB:-f1d4bb3548854086b099e368a5c2449b}
+      - SESSIONS_DB=${SESSIONS_DB:-67f12bf0eafb4321aba88f922969bc90}
+      - SYSTEM_KNOWLEDGE_DB=${SYSTEM_KNOWLEDGE_DB:-f5169ab773924c8ba93f185930c76c12}
+    networks:
+      - jen-os-network
+
+networks:
+  jen-os-network:
+    driver: bridge

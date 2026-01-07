@@ -1,0 +1,22 @@
+{
+  "name": "jen-os-mcp",
+  "version": "2.0.0",
+  "description": "Powerful MCP server for Jen OS - Router Tasks, Artifacts, Patterns, Content Pipeline",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:http": "TRANSPORT=http node src/index.js",
+    "start:stdio": "TRANSPORT=stdio node src/index.js",
+    "dev": "TRANSPORT=http node --watch src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@notionhq/client": "^2.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Jen OS",
+  "license": "MIT"
+}
