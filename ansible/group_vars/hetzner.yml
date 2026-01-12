@@ -1,0 +1,29 @@
+---
+# Jen OS Hetzner Server Variables
+
+# Server Configuration
+server_timezone: America/New_York
+server_hostname: jen-os-hetzner
+
+# Directories
+secrets_dir: /root/secrets
+mcp_dir: /opt/mcp-servers
+n8n_dir: /opt/n8n
+
+# Docker
+docker_network: jen-os-network
+
+# Ports
+n8n_port: 5678
+jen_os_mcp_port: 3847
+
+# Jen OS Notion Database IDs
+router_tasks_db: "d4889fd9e8a241578d6cf1ad43b798de"
+artifacts_db: "d425ea1f026c4ad997e458fe3fd6c5b3"
+patterns_db: "f1d4bb354885408b099e368a5c2449b"
+sessions_db: "67f12bf0eafb4321aba88f922969bc90"
+system_knowledge_db: "f5169ab773924c8ba93f185930c76c12"
+
+# GitHub MCP Settings
+github_toolsets: "repos,issues,pull_requests,actions,code_security"
+github_read_only: false
