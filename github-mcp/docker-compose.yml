@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    container_name: github-mcp
+    restart: unless-stopped
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}
+      - GITHUB_TOOLSETS=repos,issues,pull_requests,actions,code_security
+      - GITHUB_READ_ONLY=0
+    stdin_open: true
+    tty: true
+    networks:
+      - jen-os-network
+
+networks:
+  jen-os-network:
+    external: true
