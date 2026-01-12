@@ -1,0 +1,301 @@
+---
+# Jen OS Infrastructure Deployment Playbook
+# Usage: ansible-playbook site.yml
+# Or specific tags: ansible-playbook site.yml --tags "docker,mcp"
+
+- name: Bootstrap and Deploy Jen OS Infrastructure
+  hosts: hetzner
+  become: yes
+  vars:
+    secrets_dir: /root/secrets
+    mcp_dir: /opt/mcp-servers
+    n8n_dir: /opt/n8n
+    docker_network: jen-os-network
+    
+    # Database IDs for Jen OS MCP
+    router_tasks_db: "d4889fd9e8a241578d6cf1ad43b798de"
+    artifacts_db: "d425ea1f026c4ad997e458fe3fd6c5b3"
+    patterns_db: "f1d4bb354885408b099e368a5c2449b"
+    sessions_db: "67f12bf0eafb4321aba88f922969bc90"
+    system_knowledge_db: "f5169ab773924c8ba93f185930c76c12"
+
+  tasks:
+    # ============ SYSTEM SETUP ============
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [system]
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - git
+          - ufw
+          - fail2ban
+          - htop
+          - vim
+          - jq
+        state: present
+      tags: [system]
+
+    # ============ SECURITY ============
+    - name: Configure UFW defaults
+      ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: incoming, policy: deny }
+        - { direction: outgoing, policy: allow }
+      tags: [security]
+
+    - name: Allow SSH
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+      tags: [security]
+
+    - name: Allow HTTP/HTTPS
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '80'
+        - '443'
+      tags: [security]
+
+    - name: Allow n8n port
+      ufw:
+        rule: allow
+        port: '5678'
+        proto: tcp
+      tags: [security]
+
+    - name: Allow Jen OS MCP port
+      ufw:
+        rule: allow
+        port: '3847'
+        proto: tcp
+      tags: [security]
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+      tags: [security]
+
+    - name: Enable fail2ban
+      service:
+        name: fail2ban
+        state: started
+        enabled: yes
+      tags: [security]
+
+    # ============ DOCKER ============
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      tags: [docker]
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      tags: [docker]
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+      tags: [docker]
+
+    - name: Start Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+      tags: [docker]
+
+    - name: Create Docker network
+      docker_network:
+        name: "{{ docker_network }}"
+        state: present
+      tags: [docker]
+
+    # ============ SECRETS ============
+    - name: Create secrets directory
+      file:
+        path: "{{ secrets_dir }}"
+        state: directory
+        mode: '0700'
+      tags: [secrets]
+
+    - name: Check for GitHub PAT
+      stat:
+        path: "{{ secrets_dir }}/github-pat.txt"
+      register: github_pat
+      tags: [secrets]
+
+    - name: Warn if GitHub PAT missing
+      debug:
+        msg: "WARNING: GitHub PAT not found at {{ secrets_dir }}/github-pat.txt - create manually"
+      when: not github_pat.stat.exists
+      tags: [secrets]
+
+    - name: Check for Notion token
+      stat:
+        path: "{{ secrets_dir }}/notion-token.txt"
+      register: notion_token
+      tags: [secrets]
+
+    - name: Warn if Notion token missing
+      debug:
+        msg: "WARNING: Notion token not found at {{ secrets_dir }}/notion-token.txt - create manually"
+      when: not notion_token.stat.exists
+      tags: [secrets]
+
+    # ============ MCP SERVERS ============
+    - name: Clone MCP servers repo
+      git:
+        repo: https://github.com/educence/mcp-servers.git
+        dest: "{{ mcp_dir }}"
+        version: master
+        force: yes
+      tags: [mcp]
+
+    - name: Create GitHub MCP .env
+      copy:
+        content: "GITHUB_PERSONAL_ACCESS_TOKEN={{ lookup('file', secrets_dir + '/github-pat.txt') }}"
+        dest: "{{ mcp_dir }}/github-mcp/.env"
+        mode: '0600'
+      when: github_pat.stat.exists
+      tags: [mcp, github-mcp]
+
+    - name: Deploy GitHub MCP
+      community.docker.docker_compose_v2:
+        project_src: "{{ mcp_dir }}/github-mcp"
+        state: present
+      when: github_pat.stat.exists
+      tags: [mcp, github-mcp]
+
+    - name: Create Jen OS MCP .env
+      copy:
+        content: |
+          NOTION_TOKEN={{ lookup('file', secrets_dir + '/notion-token.txt') }}
+          TRANSPORT=http
+          PORT=3847
+          ROUTER_TASKS_DB={{ router_tasks_db }}
+          ARTIFACTS_DB={{ artifacts_db }}
+          PATTERNS_DB={{ patterns_db }}
+          SESSIONS_DB={{ sessions_db }}
+          SYSTEM_KNOWLEDGE_DB={{ system_knowledge_db }}
+        dest: "{{ mcp_dir }}/jen-os-mcp-v2/.env"
+        mode: '0600'
+      when: notion_token.stat.exists
+      tags: [mcp, jen-os-mcp]
+
+    - name: Build Jen OS MCP image
+      community.docker.docker_image:
+        name: jen-os-mcp
+        build:
+          path: "{{ mcp_dir }}/jen-os-mcp-v2"
+        source: build
+        state: present
+        force_source: yes
+      when: notion_token.stat.exists
+      tags: [mcp, jen-os-mcp]
+
+    - name: Deploy Jen OS MCP
+      community.docker.docker_compose_v2:
+        project_src: "{{ mcp_dir }}/jen-os-mcp-v2"
+        state: present
+      when: notion_token.stat.exists
+      tags: [mcp, jen-os-mcp]
+
+    # ============ N8N ============
+    - name: Create n8n directory
+      file:
+        path: "{{ n8n_dir }}"
+        state: directory
+        mode: '0755'
+      tags: [n8n]
+
+    - name: Create n8n docker-compose.yml
+      copy:
+        content: |
+          version: '3.8'
+          services:
+            n8n:
+              image: n8nio/n8n:latest
+              container_name: n8n
+              restart: unless-stopped
+              ports:
+                - "5678:5678"
+              environment:
+                - N8N_HOST=0.0.0.0
+                - N8N_PORT=5678
+                - N8N_PROTOCOL=http
+                - NODE_ENV=production
+                - WEBHOOK_URL=http://157.180.30.27:5678/
+                - GENERIC_TIMEZONE=America/New_York
+              volumes:
+                - n8n_data:/home/node/.n8n
+              networks:
+                - jen-os-network
+          
+          volumes:
+            n8n_data:
+          
+          networks:
+            jen-os-network:
+              external: true
+        dest: "{{ n8n_dir }}/docker-compose.yml"
+        mode: '0644'
+      tags: [n8n]
+
+    - name: Deploy n8n
+      community.docker.docker_compose_v2:
+        project_src: "{{ n8n_dir }}"
+        state: present
+      tags: [n8n]
+
+    # ============ VERIFICATION ============
+    - name: Wait for services to start
+      pause:
+        seconds: 10
+      tags: [verify]
+
+    - name: Check running containers
+      command: docker ps --format 'table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}'
+      register: docker_status
+      tags: [verify]
+
+    - name: Show container status
+      debug:
+        var: docker_status.stdout_lines
+      tags: [verify]
+
+    - name: Test n8n health
+      uri:
+        url: http://localhost:5678/healthz
+        status_code: 200
+      register: n8n_health
+      ignore_errors: yes
+      tags: [verify]
+
+    - name: Report n8n status
+      debug:
+        msg: "n8n is {{ 'UP' if n8n_health.status == 200 else 'DOWN' }}"
+      tags: [verify]
